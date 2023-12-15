@@ -1,0 +1,10 @@
+PyPDF2
+gtts
+langid
+python_docx
+langchain
+streamlit
+streamlit-mic-recorder
+openai
+google-generativeai
+pillow
