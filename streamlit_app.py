@@ -25,11 +25,13 @@ if "openai_model_list" not in st.session_state:
     st.session_state.gpt_choice_name = "Gemini"
 
     # chat parameter
-    st.session_state.mode_list = ["**🤖Chat**","**💬Talk**","**🔤Deeplx**","**🎨Txt2Img**"]
+    st.session_state.mode_list = ["**🤖Chat**","**🔤Deeplx**","**🎨Txt2Img**"]
     st.session_state.mode = "**🤖Chat**"
     st.session_state.sys_prompt = ""
     st.session_state.chat_speech = True
-    st.session_state.speech_language = "zh"
+    st.session_state.speech_input = False
+    st.session_state.speech_input_lists = ["中文-zh","English-en","日本語-ja","Русский язык-ru","Deutsch-de","Français-fr","중국어-ko"]
+    st.session_state.speech_language = st.session_state.speech_input_lists[0]
     st.session_state.audio_prompt = None
     st.session_state.chat_short_file = None
 
@@ -54,7 +56,7 @@ if "openai_model_list" not in st.session_state:
 
     # translate parameter
     st.session_state.translate_session = []
-    st.session_state.lang_lists = ["中文-zh","English-en","日本語-ja","Русский язык-ru","Deutsch-de","Français-fr","중국어-ko"]
+    st.session_state.lang_lists = ["auto","中文-zh","English-en","日本語-ja","Русский язык-ru","Deutsch-de","Français-fr","중국어-ko"]
     st.session_state.target_lang = st.session_state.lang_lists[0]
     st.session_state.translate_speech = True
 
@@ -88,7 +90,7 @@ if "openai_model_list" not in st.session_state:
         "艺术-Zavychromaxl-v3":"https://api-inference.huggingface.co/models/stablediffusionapi/zavychromaxlv3",
     }
     st.session_state.negative_prompt = "extra fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed, ugly, bad anatomy, bad proportions, extra limbs, cloned face, double torso, extra arms, extra hands, mangled fingers, missing lips, ugly face, distorted face, extra legs"
-    st.session_state.StableDiffusion_URL = st.session_state["draw_model_list"][st.session_state["draw_model"]]
+    st.session_state.StableDiffusion_URL = st.session_state.draw_model_list[st.session_state.draw_model]
     st.session_state.draw_sesson = []
 
     # token
@@ -107,7 +109,6 @@ if "openai_model_list" not in st.session_state:
 header =  st.empty()
 
 # 整体页面
-
 show_app = st.container()
 with show_app:
 
@@ -254,6 +255,14 @@ def mytts(text):
     autoplay_audio(speach_BytesIO)
     st.write(lang,conf)
 
+
+@st.cache_data
+def audio2text(audio_prompt,language):
+    audio_data = sr.AudioData(audio_prompt['bytes'],audio_prompt['sample_rate'],audio_prompt['sample_width'])
+    output = st.session_state.sr.recognize_google(audio_data,language=language)
+    return output
+
+
 def show_chat_page(flag,session):
     if not flag:
         with show_chat:
@@ -363,7 +372,14 @@ def deeplx_translate(text,target_lang):
 def translate(text,target_lang):
     st.session_state.translate_session.append({"role":"user","content":text})
     show_translate_page()
-    flag,result = deeplx_translate(text,target_lang)
+    if target_lang == "to":
+        lang,conf = langid.classify(text)
+        if lang == "zh":
+            flag,result = deeplx_translate(text,"en")
+        else:
+            flag,result = deeplx_translate(text,"zh")
+    else:
+        flag,result = deeplx_translate(text,target_lang)
     if flag:
         reply = result["data"]
         st.session_state.translate_session.append({"role":"assistant","content":reply})
@@ -488,21 +504,21 @@ def get_file_chat():
         get_file_reader(st.session_state.chat_short_file,file_name,file_type)
 
 def change_paramater():
-    
     st.session_state.openai_api_key = st.session_state.openai_api_key
     st.session_state.openai_base_url = st.session_state.openai_base_url
     st.session_state.sys_prompt = st.session_state.sys_prompt
     st.session_state.google_api_key = st.session_state.google_api_key
     st.session_state.chat_speech = st.session_state.chat_speech
     st.session_state.google_api_key = st.session_state.google_api_key
+    st.session_state.speech_input = st.session_state.speech_input
+    st.session_state.speech_language = st.session_state.speech_language
     st.session_state.draw_model = st.session_state.draw_model
-    st.session_state.StableDiffusion_URL = st.session_state["draw_model_list"][st.session_state["draw_model"]]
+    st.session_state.StableDiffusion_URL = st.session_state.draw_model_list[st.session_state.draw_model]
     st.session_state.huggingface_token = st.session_state.huggingface_token
     st.session_state.negative_prompt = st.session_state.negative_prompt
     st.session_state.mode = st.session_state.mode
     st.session_state.target_lang = st.session_state.target_lang
     st.session_state.translate_speech = st.session_state.translate_speech
-
 
 def get_save():
     change_paramater()
@@ -526,9 +542,9 @@ def get_save():
             show_chat_page(False,st.session_state.openai_session)
         else:
             show_chat_page(True,st.session_state.google_session)
-    elif st.session_state["mode"] == "**🔤Deeplx**":
+    elif st.session_state.mode == "**🔤Deeplx**":
         show_translate_page()
-    elif st.session_state["mode"] == "**🎨Txt2Img**":
+    elif st.session_state.mode == "**🎨Txt2Img**":
         show_draw_page()
     
 
@@ -579,6 +595,7 @@ with st.sidebar:
                     st.button("ChatFile",use_container_width=True,key="ChatFile")
                     if st.session_state.get("ChatFile"):
                         get_file_chat()
+            st.session_state.speech_input = st.toggle("talk mode",st.session_state.speech_input,on_change=change_paramater)
                 
     # 翻译设置
     with st.container():
@@ -592,7 +609,6 @@ with st.sidebar:
             st.session_state.draw_model = st.selectbox('Draw Models', sorted(st.session_state.draw_model_list.keys(),key=lambda x:x.split("-")[0]),on_change=change_paramater)
             st.session_state.huggingface_token = st.text_input('Huggingface Token',type='password',value=st.session_state.huggingface_token,on_change=change_paramater)
             st.session_state.negative_prompt = st.text_input('Negative Prompt',value=st.session_state.negative_prompt,on_change=change_paramater)
-
 
     # 保存
     st.button("Save",use_container_width=True,key="Save")
@@ -613,21 +629,44 @@ if st.session_state.mode == "**🤖Chat**":
         header.write("<h2> 🤖 "+st.session_state.openai_model+"</h2>",unsafe_allow_html=True)
     else:
         header.write("<h2> 🤖 "+st.session_state.google_model+"</h2>",unsafe_allow_html=True)
-    user_prompt = st.chat_input("Send a message")
-    if user_prompt:
-        if not st.session_state.gpt_choice:
-            chat_ai(user_prompt,st.session_state.openai_model,st.session_state.openai_history,st.session_state.openai_session)
-        else:
-            chat_ai(user_prompt,st.session_state.google_model,st.session_state.google_histgory,st.session_state.google_session)
+    if not st.session_state.speech_input:
+        user_prompt = st.chat_input("Send a message")
+        if user_prompt:
+            if not st.session_state.gpt_choice:
+                chat_ai(user_prompt,st.session_state.openai_model,st.session_state.openai_history,st.session_state.openai_session)
+            else:
+                chat_ai(user_prompt,st.session_state.google_model,st.session_state.google_histgory,st.session_state.google_session)
+    else:
+        with st.container():
+            st.session_state.speech_language = st.selectbox("🎙️language",st.session_state.speech_input_lists,on_change=change_paramater)
+            st.session_state.audio_prompt = mic_recorder(
+                start_prompt="🎙️开始说话",
+                stop_prompt="🛑结束说话", 
+                just_once=True,
+                use_container_width=True,
+                callback=None,
+                args=(),
+                kwargs={},
+                key=None
+            )
+        if st.session_state.audio_prompt:
+            user_prompt = audio2text(st.session_state.audio_prompt,st.session_state.speech_language[-2:])
+            if not st.session_state.gpt_choice:
+                chat_ai(user_prompt,st.session_state.openai_model,st.session_state.openai_history,st.session_state.openai_session)
+            else:
+                chat_ai(user_prompt,st.session_state.google_model,st.session_state.google_histgory,st.session_state.google_session)
 
-elif st.session_state["mode"] == "**🔤Deeplx**":
+
+elif st.session_state.mode == "**🔤Deeplx**":
     header.write("<h2> 🔤 Deeplx-"+st.session_state.target_lang+"</h2>",unsafe_allow_html=True)
     txt_prompt = st.chat_input("Input your content to be translated",max_chars=5000)
     if txt_prompt:
         translate(txt_prompt,st.session_state.target_lang[-2:])
 
-elif st.session_state["mode"] == "**🎨Txt2Img**":
+elif st.session_state.mode == "**🎨Txt2Img**":
     header.write("<h2> 🎨 "+st.session_state.draw_model+"</h2>",unsafe_allow_html=True)
     draw_prompt = st.chat_input("Send your prompt")
     if draw_prompt:
         text2img(draw_prompt)
+
+change_paramater()
