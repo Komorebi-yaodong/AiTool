@@ -8,3 +8,4 @@ streamlit-mic-recorder
 openai
 google-generativeai
 pillow
+PyDeepLX

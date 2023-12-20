@@ -25,6 +25,14 @@ streamlit run streamlit_app.py
 2. Access `https://share.streamlit.io/`and `New app`
 3. Waiting to use!
 
+### author channel
+
+According to streamlit using secrets, you need to create a /.streamlit/secrets.toml file has the following content format.
+
+![1703077690614](image/README/1703077690614.png)
+
+Secret can also be set in the settings of the share.streamlit.io platform. After configuration, it can be automatically filled in by entering the password in the **author channel**. Don't forget to set /.streamlet/secrets. toml added to. gitignore.
+
 ## Usage
 
 ### Chat function(🤖Chat||💬Talk)

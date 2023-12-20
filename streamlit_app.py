@@ -3,6 +3,7 @@ from streamlit_mic_recorder import mic_recorder
 from streamlit.components.v1 import html
 import google.generativeai as genai
 import speech_recognition as sr
+from PyDeepLX import PyDeepLX
 from docx import Document
 from openai import OpenAI
 import streamlit as st
@@ -323,7 +324,7 @@ def get_file_reader(file,name,type):
         return r_splitter.split_text(text)
     
     assistant_reply = "Acknowledged"
-    start_content = "You are a file reading bot. Next, the user will send a file. After reading, you should fully understand the content of the file and be able to analyze, interpret, and respond to questions related to the file in both Chinese and Markdown formats. Answer step-by-step."
+    start_content = "You are a file reading bot. Next, the user will send a file. After reading, you should fully understand the content of the file and be able to analyze, interpret, and respond to questions related to the file in both Chinese and Markdown formats. Please only answer questions based on the content of the document. If the question is not mentioned in the document, please reply directly to the article without referring to other materials. Answer step-by-step."
     end_content = "File sent. Next, please reply in Chinese and format your response using markdown based on the content.'"
     st.session_state.openai_history = [{'role':'system','content':start_content}]
     st.session_state.google_histgory = [{'role':'user','parts':[start_content,]},{'role':'model','parts':[assistant_reply,]}]
@@ -332,7 +333,7 @@ def get_file_reader(file,name,type):
     text = get_text(file,type)
     text_list = get_splitted_text(text)
     pages = len(text_list)
-    start_message = f"文件名称为{name}，我现在会将文件内容的内容分 {len(text_list)} 部分发送给你。请确保你已经准备好接收，接收到文件发送完毕的指令后，请准备回答我的问题。"
+    start_message = f"The file name is {name}, and I will now send you the content of the file in {len(text_list)} sections. Please ensure that you are ready to receive the instructions for sending the file. Once you receive the instructions, please be prepared to answer my question."
     st.session_state.openai_history+=[{'role':'user','content':start_message},{'role':'assistant','content':assistant_reply}]
     st.session_state.google_histgory+=[{'role':'user','parts':[start_message,]},{'role':'model','parts':[assistant_reply,]}]
 
@@ -348,22 +349,9 @@ def get_file_reader(file,name,type):
 
 
 def deeplx_translate(text,target_lang):
-    url = "https://api.deeplx.org/translate"
-    data = {
-        'text': text,
-        'source_lang': 'auto',
-        'target_lang': target_lang,
-    }
-    data = json.dumps(data)
-    headers = {
-        'Content-Type': 'application/json',
-    }
     try:
-        response = requests.post(url,headers=headers,data=data)
-        if response.status_code == 200:
-            return True,response.json()
-        else:
-            return False,response.json()
+        response = PyDeepLX.translate(text,'auto',target_lang)
+        return True,response
     except Exception as e:
         st.error("Deeplx response error: {}".format(e))
         return False,e
@@ -375,13 +363,12 @@ def translate(text,target_lang):
     if target_lang == "to":
         lang,conf = langid.classify(text)
         if lang == "zh":
-            flag,result = deeplx_translate(text,"en")
+            flag,reply = deeplx_translate(text,"en")
         else:
-            flag,result = deeplx_translate(text,"zh")
+            flag,reply = deeplx_translate(text,"zh")
     else:
-        flag,result = deeplx_translate(text,target_lang)
+        flag,reply = deeplx_translate(text,target_lang)
     if flag:
-        reply = result["data"]
         st.session_state.translate_session.append({"role":"assistant","content":reply})
         
         with show_translate.chat_message("assistant"):
@@ -389,7 +376,7 @@ def translate(text,target_lang):
         if st.session_state.translate_speech == True:
             mytts(reply)
     else:
-        st.error(result)
+        st.error(reply)
 
 
 def show_translate_page():
