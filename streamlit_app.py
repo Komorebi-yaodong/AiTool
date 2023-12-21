@@ -60,6 +60,8 @@ if "openai_model_list" not in st.session_state:
     st.session_state.lang_lists = ["auto","中文-zh","English-en","日本語-ja","Русский язык-ru","Deutsch-de","Français-fr","중국어-ko"]
     st.session_state.target_lang = st.session_state.lang_lists[0]
     st.session_state.translate_speech = True
+    st.session_state.translate_api_list = ["https://deeplx.aivvm.com/","PyDeeplx"]
+    st.session_state.translate_api = st.session_state.translate_api_list[0]
 
     # draw parameter
     st.session_state.draw_model = "初始-StableDiffusion-2-1"
@@ -348,26 +350,42 @@ def get_file_reader(file,name,type):
 
 
 
-def deeplx_translate(text,target_lang):
-    try:
-        response = PyDeepLX.translate(text,'auto',target_lang)
-        return True,response
-    except Exception as e:
-        st.error("Deeplx response error: {}".format(e))
-        return False,e
+def deeplx_translate(text,source_lang,target_lang,api):
+    if api == st.session_state.translate_api_list[0]:
+        if source_lang is None:
+            source_lang,conf = langid.classify(text)
+        headers = {"Content-Type": "application/json"}
+        body = {
+            "text":text,
+            "target_lang":target_lang,
+            "source_lang":source_lang
+        }
+        try:
+            response = requests.post(api, json=body, headers=headers)
+            return True,response.json()["response"]["translated_text"]
+        except Exception as e:
+            st.error("Deeplx response error: {}".format(e))
+            return False,e
+    elif api == st.session_state.translate_api_list[1]:
+        try:
+            response = PyDeepLX.translate(text,'auto',target_lang)
+            return True,response
+        except Exception as e:
+            st.error("Deeplx response error: {}".format(e))
+            return False,e
 
 
-def translate(text,target_lang):
+def translate(text,target_lang,api=st.session_state.translate_api):
     st.session_state.translate_session.append({"role":"user","content":text})
     show_translate_page()
     if target_lang == "to":
         lang,conf = langid.classify(text)
         if lang == "zh":
-            flag,reply = deeplx_translate(text,"en")
+            flag,reply = deeplx_translate(text,lang,"en",api)
         else:
-            flag,reply = deeplx_translate(text,"zh")
+            flag,reply = deeplx_translate(text,lang,"zh",api)
     else:
-        flag,reply = deeplx_translate(text,target_lang)
+        flag,reply = deeplx_translate(text,None,target_lang,api)
     if flag:
         st.session_state.translate_session.append({"role":"assistant","content":reply})
         
@@ -504,6 +522,7 @@ def change_paramater():
     st.session_state.huggingface_token = st.session_state.huggingface_token
     st.session_state.negative_prompt = st.session_state.negative_prompt
     st.session_state.mode = st.session_state.mode
+    st.session_state.translate_api = st.session_state.translate_api
     st.session_state.target_lang = st.session_state.target_lang
     st.session_state.translate_speech = st.session_state.translate_speech
 
@@ -587,6 +606,7 @@ with st.sidebar:
     # 翻译设置
     with st.container():
         with st.expander("**Translate Settings**"):
+            st.session_state.translate_api = st.selectbox("Translate API",st.session_state.translate_api_list,on_change=change_paramater)
             st.session_state.target_lang = st.selectbox("Target Language",st.session_state.lang_lists,on_change=change_paramater)
             st.session_state.translate_speech = st.toggle('translate speech', st.session_state.translate_speech,on_change=change_paramater)
     
