@@ -40,9 +40,8 @@ if "openai_model_list" not in st.session_state:
         "gpt-3.5-turbo",
         "gpt-3.5-turbo-16k",
         "gpt-4",
-        "gpt-4-turbo",
-        "text-davinci-001",
-        "text-davinci-002",
+        "gpt-4-0613",
+        "gpt-4-1106-preview",
         "text-davinci-003",
     ]
     st.session_state.openai_model = st.session_state.openai_model_list[0]
@@ -187,7 +186,8 @@ def chat_ai(message,model,history,session,flag=st.session_state.gpt_choice,attac
                 history.append(reply)
                 session.append(reply)
                 if st.session_state.chat_speech == True:
-                    mytts(reply["content"])
+                    if reply["content"] != "":
+                        mytts(reply["content"])
             
             
         else:
@@ -225,7 +225,8 @@ def chat_ai(message,model,history,session,flag=st.session_state.gpt_choice,attac
                 history.append(reply)
                 session.append(reply)
                 if st.session_state.chat_speech == True:
-                    mytts(reply["parts"][0])
+                    if reply["parts"][0]!="":
+                        mytts(reply["parts"][0])
             
             
         else:
@@ -392,7 +393,8 @@ def translate(text,target_lang,api=st.session_state.translate_api):
         with show_translate.chat_message("assistant"):
             st.write(reply)
         if st.session_state.translate_speech == True:
-            mytts(reply)
+            if reply != "":
+                mytts(reply)
     else:
         st.error(reply)
 
