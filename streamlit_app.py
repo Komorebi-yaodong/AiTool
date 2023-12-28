@@ -383,7 +383,12 @@ def translate(text,target_lang,api=st.session_state.translate_api):
         if lang == "zh":
             flag,reply = deeplx_translate(text,lang,"en",api)
         else:
-            flag,reply = deeplx_translate(text,lang,"zh",api)
+            lang_list = [i[-2:] for i in st.session_state.lang_lists]
+            lang_list.remove("to")
+            if lang not in lang_list:
+                flag,reply = deeplx_translate(text,"en","zh",api)
+            else:
+                flag,reply = deeplx_translate(text,lang,"zh",api)
     else:
         flag,reply = deeplx_translate(text,None,target_lang,api)
     if flag:
