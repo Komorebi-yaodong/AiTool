@@ -89,6 +89,9 @@ if "openai_model_list" not in st.session_state:
         "初始-StableDiffusion-XL-0.9":"https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-0.9",
         "动漫-TMND-Mix":"https://api-inference.huggingface.co/models/stablediffusionapi/tmnd-mix",
         "艺术-Zavychromaxl-v3":"https://api-inference.huggingface.co/models/stablediffusionapi/zavychromaxlv3",
+        "Dalle-v1.1":"https://api-inference.huggingface.co/models/dataautogpt3/OpenDalleV1.1",
+        "Dalle-3-xl(类Dalle3)":"https://api-inference.huggingface.co/models/openskyml/dalle-3-xl",
+        "playground-v2-美化":"https://api-inference.huggingface.co/models/playgroundai/playground-v2-1024px-aesthetic",
     }
     st.session_state.negative_prompt = "extra fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed, ugly, bad anatomy, bad proportions, extra limbs, cloned face, double torso, extra arms, extra hands, mangled fingers, missing lips, ugly face, distorted face, extra legs"
     st.session_state.StableDiffusion_URL = st.session_state.draw_model_list[st.session_state.draw_model]
