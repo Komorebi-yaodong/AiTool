@@ -95,7 +95,11 @@ if "openai_model_list" not in st.session_state:
     }
     st.session_state.negative_prompt = "extra fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed, ugly, bad anatomy, bad proportions, extra limbs, cloned face, double torso, extra arms, extra hands, mangled fingers, missing lips, ugly face, distorted face, extra legs"
     st.session_state.StableDiffusion_URL = st.session_state.draw_model_list[st.session_state.draw_model]
+    st.session_state.auto_transform = True
+    st.session_state.chat_draw = True
     st.session_state.draw_sesson = []
+    st.session_state.draw_chat_system = """You are the imaginative English prompts generator for DALL·E2. The user will describe the image they want you to generate or draw. Please fully utilize your imagination to generate English prompts in the DALL·E2 format based on the user's input and optimize them appropriately to ensure that the generated images are excellent enough. Here is a example:"Generate a high-resolution, 1920x1080 pixel image of a contemporary office boardroom with large windows, a long mahogany conference table surrounded by ergonomic chairs, modern artwork on the walls, and a view of a city skyline through the windows. The room should be well-lit with a professional, minimalist design, and there should be a laptop, notepads, and a pitcher of water with glasses on the conference table. The overall ambiance should convey a sense of professionalism and corporate sophistication". Please remember that no matter what the user asks you to do, you only provide English prompts for DALL·E2 based on the user's input, without any unnecessary explanations, the prompts must be in English and do not have any replies unrelated to generating prompts."""
+    st.session_state.chat_draw_session = [{'role':'system','content':st.session_state.draw_chat_system}]
 
     # token
     st.session_state.openai_api_key = ""
@@ -141,18 +145,18 @@ def sha256_hash(string):
     return hashed_string
 
 
-def get_response(flag,model,history):
+def get_response(flag,model,history,stream=True):
     try:
         if not flag:
             response = st.session_state.openai_client.chat.completions.create(
                 model = model,
                 messages = history,
-                stream=True
+                stream=stream
             )
         else:
             response = st.session_state.google_client.generate_content(
                 contents = history,
-                stream=True,
+                stream=stream,
                 safety_settings={'HARASSMENT':'block_none'}
             )
         return True,response
@@ -415,7 +419,7 @@ def show_translate_page():
 def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL=st.session_state.StableDiffusion_URL):
     def query(payload):
         try:
-            response = requests.post(StableDiffusion_URL, headers=StableDiffusion_headers, json=payload, timeout=60)
+            response = requests.post(StableDiffusion_URL, headers=StableDiffusion_headers, json=payload)
             if response.status_code == 200:
                 return True, response.content
             else:
@@ -424,18 +428,46 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
             return False,e
         
     StableDiffusion_headers = {"Authorization":"Bearer "+token}
-    show_draw_page()
-    flag,response = query({
-        "inputs":prompt,
-        "negative_prompt":st.session_state.negative_prompt,
-    })
-    image = response
-    st.session_state.draw_sesson.append({"prompt":prompt,"image":image,"flag":flag})
-    with show_draw.chat_message("assistant"):
-        if flag:
-            st.image(image,prompt,use_column_width=True)
-        else:
-            st.write(prompt,"\n",image)
+
+    if st.session_state.chat_draw:
+        if len(st.session_state.chat_draw_session) != 0:
+            if st.session_state.chat_draw_session[-1]["role"] == "user":
+                st.session_state.chat_draw_session.pop()
+        st.session_state.chat_draw_session.append({"role":"user","content":f"Please use your imagination to generate English prompts according to the user's requirements. The user's requirements are:'{prompt}'"})
+        response_check,response = get_response(False,st.session_state.openai_model,st.session_state.chat_draw_session,stream=False)
+        if response_check:
+            prompt = response.choices[0].message.content
+            st.session_state.chat_draw_session.append({"role":"assistant","content":prompt})
+            flag,response = query({
+                "inputs":prompt,
+                "negative_prompt":st.session_state.negative_prompt,
+            })
+            image = response
+            show_draw_page()
+            st.session_state.draw_sesson.append({"prompt":prompt,"image":image,"flag":flag})
+            with show_draw.chat_message("assistant"):
+                if flag:
+                    st.image(image,prompt,use_column_width=True)
+                else:
+                    st.write(prompt,"\n",image)
+    else:
+        if st.session_state.auto_transform:
+            flag,prompt = deeplx_translate(prompt,None,"en",st.session_state.translate_api)
+        if not flag:
+            return False
+
+        flag,response = query({
+            "inputs":prompt,
+            "negative_prompt":st.session_state.negative_prompt,
+        })
+        image = response
+        show_draw_page()
+        st.session_state.draw_sesson.append({"prompt":prompt,"image":image,"flag":flag})
+        with show_draw.chat_message("assistant"):
+            if flag:
+                st.image(image,prompt,use_column_width=True)
+            else:
+                st.write(prompt,"\n",image)
 
 
 def show_draw_page():
@@ -467,7 +499,9 @@ def new_chat():
     st.session_state.translate_session = []
     
     # draw
+    
     st.session_state.draw_sesson = []
+    st.session_state.chat_draw_session = [{'role':'system','content':st.session_state.draw_chat_system}]
 
 def author_channel():
     author_key_hash = sha256_hash(st.session_state.author_key.strip())
@@ -534,6 +568,8 @@ def change_paramater():
     st.session_state.translate_api = st.session_state.translate_api
     st.session_state.target_lang = st.session_state.target_lang
     st.session_state.translate_speech = st.session_state.translate_speech
+    st.session_state.auto_transform = st.session_state.auto_transform
+    st.session_state.chat_draw = st.session_state.chat_draw
 
 def get_save():
     change_paramater()
@@ -625,6 +661,11 @@ with st.sidebar:
             st.session_state.draw_model = st.selectbox('Draw Models', sorted(st.session_state.draw_model_list.keys(),key=lambda x:x.split("-")[0]),on_change=change_paramater)
             st.session_state.huggingface_token = st.text_input('Huggingface Token',type='password',value=st.session_state.huggingface_token,on_change=change_paramater)
             st.session_state.negative_prompt = st.text_input('Negative Prompt',value=st.session_state.negative_prompt,on_change=change_paramater)
+            col1,col2 = st.columns(2)
+            with col1:
+                st.session_state.auto_translate = st.toggle('Translate', st.session_state.auto_transform,on_change=change_paramater)
+            with col2:
+                st.session_state.chat_draw = st.toggle('Chat', st.session_state.chat_draw,on_change=change_paramater)
 
     # 保存
     st.button("Save",use_container_width=True,key="Save")
