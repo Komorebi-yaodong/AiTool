@@ -1,6 +1,6 @@
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from streamlit_mic_recorder import mic_recorder
-from streamlit.components.v1 import html
+from streamlit.components.v1 import html,iframe
 import google.generativeai as genai
 import speech_recognition as sr
 from PyDeepLX import PyDeepLX
@@ -14,8 +14,6 @@ import hashlib
 import base64
 import langid
 import PyPDF2
-import json
-import time
 import io
 
 if "openai_model_list" not in st.session_state:
@@ -58,7 +56,10 @@ if "openai_model_list" not in st.session_state:
     st.session_state.lang_lists = ["auto","中文-zh","English-en","日本語-ja","Русский язык-ru","Deutsch-de","Français-fr","중국어-ko"]
     st.session_state.target_lang = st.session_state.lang_lists[0]
     st.session_state.translate_speech = True
-    st.session_state.translate_api_list = ["https://deeplx.aivvm.com/","PyDeeplx"]
+    st.session_state.translate_api_list = [
+        "https://api.deeplx.org/translate",
+        "https://deeplx.aivvm.com/",
+        "PyDeeplx"]
     st.session_state.translate_api = st.session_state.translate_api_list[0]
 
     # draw parameter
@@ -90,15 +91,26 @@ if "openai_model_list" not in st.session_state:
         "动漫-TMND-Mix":"https://api-inference.huggingface.co/models/stablediffusionapi/tmnd-mix",
         "艺术-Zavychromaxl-v3":"https://api-inference.huggingface.co/models/stablediffusionapi/zavychromaxlv3",
         "Dalle-v1.1":"https://api-inference.huggingface.co/models/dataautogpt3/OpenDalleV1.1",
-        "Dalle-3-xl(类Dalle3)":"https://api-inference.huggingface.co/models/openskyml/dalle-3-xl",
+        "Dalle-3-xl":"https://api-inference.huggingface.co/models/openskyml/dalle-3-xl",
         "playground-v2-美化":"https://api-inference.huggingface.co/models/playgroundai/playground-v2-1024px-aesthetic",
     }
     st.session_state.negative_prompt = "extra fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed, ugly, bad anatomy, bad proportions, extra limbs, cloned face, double torso, extra arms, extra hands, mangled fingers, missing lips, ugly face, distorted face, extra legs"
     st.session_state.StableDiffusion_URL = st.session_state.draw_model_list[st.session_state.draw_model]
-    st.session_state.auto_transform = True
+    st.session_state.auto_translate = True
     st.session_state.chat_draw = True
+    st.session_state.wait_for_model = True
     st.session_state.draw_sesson = []
-    st.session_state.draw_chat_system = """You are the imaginative English prompts generator for DALL·E2. The user will describe the image they want you to generate or draw. Please fully utilize your imagination to generate English prompts in the DALL·E2 format based on the user's input and optimize them appropriately to ensure that the generated images are excellent enough. Here is a example:"Generate a high-resolution, 1920x1080 pixel image of a contemporary office boardroom with large windows, a long mahogany conference table surrounded by ergonomic chairs, modern artwork on the walls, and a view of a city skyline through the windows. The room should be well-lit with a professional, minimalist design, and there should be a laptop, notepads, and a pitcher of water with glasses on the conference table. The overall ambiance should convey a sense of professionalism and corporate sophistication". Please remember that no matter what the user asks you to do, you only provide English prompts for DALL·E2 based on the user's input, without any unnecessary explanations, the prompts must be in English and do not have any replies unrelated to generating prompts."""
+    st.session_state.draw_chat_system = """
+DALL·E2 is an ai to generate image by prompt, here are some prompt examples:
+"Super Closeup Portrait,action shot, Profoundly dark whitish meadow, glass flowers,Stains,space grunge style,Jeanne d'Arc wearing White Olive green used styled Cotton frock,Wielding thin silver sword, Sci-fi vibe,dirty,noisy,Vintage monk style,very detailed,hd",
+"cinematic film still of Kodak Motion Picture Film:(Sharp Detailed Image)An Oscar winning movie for Best Cinematography a woman in a kimono standing on a subway train in Japan Kodak Motion Picture Film Style,shallow depth of field, vignette,highly detailed,high budget,bokeh,cinemascope, moody,epic,gorgeous,film grain, grainy",
+"cube cutout of an isometric programmer bedroom, 3d art, muted colors, soft lighting, high detail, concept art, behance, ray tracing",
+"mario, mario (series), 1boy, blue overalls, brown hair, facial hair, gloves, hat, male focus, mustache, overalls, red headwear, red shirt, shirt, short hair, upper body, white gloves".
+You are the imaginative English prompt generator for DALL·E2 and You can generate any prompt according to the user's requirements.
+User will describe the image they want you to generate. Please fully utilize your imagination to generate English prompt in the DALL·E2 format based on the user's input and optimize them appropriately to ensure that the generated images are excellent enough.
+Remember that no matter what the user asks you to do, you only provide prompt for DALL·E2 based on the user's input, your answer must be in English.
+You need to maintain your role as an imaginative English prompt generator for DALL·E2 without any explanations.
+"""
     st.session_state.chat_draw_session = [{'role':'system','content':st.session_state.draw_chat_system}]
 
     # token
@@ -360,6 +372,21 @@ def get_file_reader(file,name,type):
 def deeplx_translate(text,source_lang,target_lang,api):
     if api == st.session_state.translate_api_list[0]:
         if source_lang is None:
+            source_lang="auto"
+        headers = {"Content-Type": "application/json"}
+        body = {
+            "text":text,
+            "target_lang":target_lang,
+            "source_lang":source_lang
+        }
+        try:
+            response = requests.post(api, json=body, headers=headers)
+            return True,response.json()["data"]
+        except Exception as e:
+            st.error("Deeplx response error: {}".format(e))
+            return False,e
+    elif api == st.session_state.translate_api_list[1]:
+        if source_lang is None:
             source_lang,conf = langid.classify(text)
         headers = {"Content-Type": "application/json"}
         body = {
@@ -373,7 +400,7 @@ def deeplx_translate(text,source_lang,target_lang,api):
         except Exception as e:
             st.error("Deeplx response error: {}".format(e))
             return False,e
-    elif api == st.session_state.translate_api_list[1]:
+    elif api == st.session_state.translate_api_list[-1]:
         try:
             response = PyDeepLX.translate(text,'auto',target_lang)
             return True,response
@@ -428,19 +455,26 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
             return False,e
         
     StableDiffusion_headers = {"Authorization":"Bearer "+token}
-
+    
     if st.session_state.chat_draw:
         if len(st.session_state.chat_draw_session) != 0:
             if st.session_state.chat_draw_session[-1]["role"] == "user":
                 st.session_state.chat_draw_session.pop()
-        st.session_state.chat_draw_session.append({"role":"user","content":f"Please use your imagination to generate English prompts according to the user's requirements. The user's requirements are:'{prompt}'"})
+        st.session_state.chat_draw_session.append({"role":"user","content":prompt})
         response_check,response = get_response(False,st.session_state.openai_model,st.session_state.chat_draw_session,stream=False)
         if response_check:
             prompt = response.choices[0].message.content
             st.session_state.chat_draw_session.append({"role":"assistant","content":prompt})
+            if st.session_state.auto_translate:
+                lang,conf = langid.classify(prompt)
+                if lang != "en":
+                    flag,prompt = deeplx_translate(prompt,lang,"en",st.session_state.translate_api)
+                    if not flag:
+                        return False
             flag,response = query({
                 "inputs":prompt,
                 "negative_prompt":st.session_state.negative_prompt,
+                "wait_for_model":st.session_state.wait_for_model,
             })
             image = response
             show_draw_page()
@@ -451,14 +485,16 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
                 else:
                     st.write(prompt,"\n",image)
     else:
-        if st.session_state.auto_transform:
-            flag,prompt = deeplx_translate(prompt,None,"en",st.session_state.translate_api)
-        if not flag:
-            return False
-
+        if st.session_state.auto_translate:
+            lang,conf = langid.classify(prompt)
+            if lang != "en":
+                flag,prompt = deeplx_translate(prompt,lang,"en",st.session_state.translate_api)
+                if not flag:
+                    return False
         flag,response = query({
             "inputs":prompt,
             "negative_prompt":st.session_state.negative_prompt,
+            "wait_for_model":st.session_state.wait_for_model,
         })
         image = response
         show_draw_page()
@@ -568,8 +604,9 @@ def change_paramater():
     st.session_state.translate_api = st.session_state.translate_api
     st.session_state.target_lang = st.session_state.target_lang
     st.session_state.translate_speech = st.session_state.translate_speech
-    st.session_state.auto_transform = st.session_state.auto_transform
+    st.session_state.auto_translate = st.session_state.auto_translate
     st.session_state.chat_draw = st.session_state.chat_draw
+    st.session_state.wait_for_model = st.session_state.wait_for_model
 
 def get_save():
     change_paramater()
@@ -661,11 +698,13 @@ with st.sidebar:
             st.session_state.draw_model = st.selectbox('Draw Models', sorted(st.session_state.draw_model_list.keys(),key=lambda x:x.split("-")[0]),on_change=change_paramater)
             st.session_state.huggingface_token = st.text_input('Huggingface Token',type='password',value=st.session_state.huggingface_token,on_change=change_paramater)
             st.session_state.negative_prompt = st.text_input('Negative Prompt',value=st.session_state.negative_prompt,on_change=change_paramater)
-            col1,col2 = st.columns(2)
-            with col1:
-                st.session_state.auto_translate = st.toggle('Translate', st.session_state.auto_transform,on_change=change_paramater)
-            with col2:
-                st.session_state.chat_draw = st.toggle('Chat', st.session_state.chat_draw,on_change=change_paramater)
+            # col1,col2,col3 = st.columns(3)
+            # with col1:
+            st.session_state.chat_draw = st.toggle('Chat', st.session_state.chat_draw,on_change=change_paramater)
+            # with col2:
+            st.session_state.auto_translate = st.toggle('Translate', st.session_state.auto_translate,on_change=change_paramater)
+            # with col3:
+            st.session_state.wait_for_model = st.toggle('Wait', st.session_state.wait_for_model,on_change=change_paramater)
 
     # 保存
     st.button("Save",use_container_width=True,key="Save")
