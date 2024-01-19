@@ -9,6 +9,7 @@ from openai import OpenAI
 import streamlit as st
 from gtts import gTTS
 from PIL import Image
+import pandas as pd
 import requests
 import hashlib
 import base64
@@ -24,7 +25,7 @@ if "openai_model_list" not in st.session_state:
     st.session_state.gpt_choice_name = "Gemini"
 
     # chat parameter
-    st.session_state.mode_list = ["**🤖Chat**","**🔤Deeplx**","**🎨Txt2Img**"]
+    st.session_state.mode_list = ["**🤖Chat**","**🔤Deeplx**","**🎨Txt2Img**","**📊Data**"]
     st.session_state.mode = "**🤖Chat**"
     st.session_state.sys_prompt = ""
     st.session_state.chat_speech = True
@@ -106,6 +107,8 @@ I want you to act as a prompt generator for Midjourney's artificial intelligence
 """
     st.session_state.chat_draw_session = [{'role':'system','content':st.session_state.draw_chat_system}]
 
+    st.session_state.prompts_gpt = pd.DataFrame(columns=['act', 'prompt'])
+
     # token
     st.session_state.openai_api_key = ""
     st.session_state.openai_base_url = ""
@@ -136,6 +139,9 @@ with show_app:
 
     # 文本生成图片
     show_draw = st.container()
+
+    # 数据
+    show_data = st.container()
 
 ########################### function ###########################
 
@@ -506,6 +512,12 @@ def show_draw_page():
                 st.image(section["image"],section["prompt"],use_column_width=True)
             else:
                 st.write(section["prompt"],"\n",section["image"])
+
+
+@st.cache_data
+def get_data(file):
+    data = pd.read_csv(file)
+    return data
 ########################### mount ###########################
 
 def new_chat():
@@ -600,6 +612,7 @@ def change_paramater():
     st.session_state.auto_translate = st.session_state.auto_translate
     st.session_state.chat_draw = st.session_state.chat_draw
     st.session_state.wait_for_model = st.session_state.wait_for_model
+    st.session_state.prompts_gpt = st.session_state.prompts_gpt
 
 def get_save():
     change_paramater()
@@ -757,5 +770,30 @@ elif st.session_state.mode == "**🎨Txt2Img**":
     draw_prompt = st.chat_input("Send your prompt")
     if draw_prompt:
         text2img(draw_prompt)
+
+elif st.session_state.mode == "**📊Data**":
+    # 获取数据
+    prompts_gpt = get_data("./prompts.csv")
+
+    # 显示
+    header.write("<h2> 📊Data </h2>",unsafe_allow_html=True)
+    keywords = st.chat_input("Send your keywords")
+    with show_data:
+        tab_gpt,tab_sd = st.tabs(["GPT-Prompts","SD-Prompts"])
+        with tab_gpt:
+            if keywords:
+                st.session_state.prompts_gpt = pd.DataFrame(columns=['act', 'prompt'])
+                idx = 0
+                for index,row in prompts_gpt.iterrows():
+                    if keywords.lower() in row["act"].lower():
+                        idx += 1
+                        new_row = pd.DataFrame({"act":row["act"], "prompt":row["prompt"]}, index=[idx,])
+                        st.session_state.prompts_gpt = pd.concat([st.session_state.prompts_gpt, new_row],ignore_index=True)
+                st.dataframe(st.session_state.prompts_gpt)
+            else:
+                st.session_state.prompts_gpt = prompts_gpt
+                st.dataframe(st.session_state.prompts_gpt)
+    with show_data:
+        pass
 
 change_paramater()
