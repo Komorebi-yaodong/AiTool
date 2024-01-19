@@ -1,6 +1,7 @@
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from streamlit_mic_recorder import mic_recorder
 from streamlit.components.v1 import html,iframe
+from huggingface_hub import InferenceClient
 import google.generativeai as genai
 import speech_recognition as sr
 from PyDeepLX import PyDeepLX
@@ -95,6 +96,7 @@ if "openai_model_list" not in st.session_state:
         "Dalle-v1.1":"https://api-inference.huggingface.co/models/dataautogpt3/OpenDalleV1.1",
         "Dalle-3-xl":"https://api-inference.huggingface.co/models/openskyml/dalle-3-xl",
         "playground-v2-美化":"https://api-inference.huggingface.co/models/playgroundai/playground-v2-1024px-aesthetic",
+        "Dalle-proteus-v0.2":"https://api-inference.huggingface.co/models/dataautogpt3/ProteusV0.2",
     }
     st.session_state.negative_prompt = "extra fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed, ugly, bad anatomy, bad proportions, extra limbs, cloned face, double torso, extra arms, extra hands, mangled fingers, missing lips, ugly face, distorted face, extra legs"
     st.session_state.StableDiffusion_URL = st.session_state.draw_model_list[st.session_state.draw_model]
@@ -103,7 +105,7 @@ if "openai_model_list" not in st.session_state:
     st.session_state.wait_for_model = True
     st.session_state.draw_sesson = []
     st.session_state.draw_chat_system = """
-I want you to act as a prompt generator for Midjourney's artificial intelligence program. Your job is to based on conversations with users provide detailed and creative descriptions that will inspire unique and interesting images from the AI. Keep in mind that the AI is capable of understanding a wide range of language and can interpret abstract concepts, so feel free to be as imaginative and descriptive as possible. For example, you could describe a scene from a futuristic city, or a surreal landscape filled with strange creatures. The more detailed and imaginative your description, the more interesting the resulting image will be.
+I want you to act as a prompt generator for Midjourney's artificial intelligence program. Your job is to based on conversations with users provide refined, detailed and creative descriptions that will inspire unique and interesting images from the AI. Keep in mind that the AI is capable of understanding a wide range of language and can interpret abstract concepts, so feel free to be as imaginative and descriptive as possible. For example, you could describe a scene from a futuristic city, or a surreal landscape filled with strange creatures. The more detailed and imaginative your description, the more interesting the resulting image will be. Remember to generate a description of image in one paragraph in English only without any other languages.
 """
     st.session_state.chat_draw_session = [{'role':'system','content':st.session_state.draw_chat_system}]
 
@@ -443,18 +445,15 @@ def show_translate_page():
 
 
 def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL=st.session_state.StableDiffusion_URL):
-    def query(payload):
+    def query(client,payload):
         try:
-            response = requests.post(StableDiffusion_URL, headers=StableDiffusion_headers, json=payload)
-            if response.status_code == 200:
-                return True, response.content
-            else:
-                return False,response.content
+            response = client.post(json=payload,model=StableDiffusion_URL)
+            return True, response
         except requests.exceptions.RequestException as e:
             return False,e
         
-    StableDiffusion_headers = {"Authorization":"Bearer "+token}
-    
+    huggingface_client = InferenceClient(token=token)
+    st.session_state.draw_sesson.append({"role":"user","prompt":prompt})
     if st.session_state.chat_draw:
         if len(st.session_state.chat_draw_session) != 0:
             if st.session_state.chat_draw_session[-1]["role"] == "user":
@@ -470,19 +469,19 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
                     flag,prompt = deeplx_translate(prompt,lang,"en",st.session_state.translate_api)
                     if not flag:
                         return False
-            flag,response = query({
-                "inputs":prompt,
-                "negative_prompt":st.session_state.negative_prompt,
-                "wait_for_model":st.session_state.wait_for_model,
-            })
-            image = response
             show_draw_page()
-            st.session_state.draw_sesson.append({"prompt":prompt,"image":image,"flag":flag})
             with show_draw.chat_message("assistant"):
+                st.write("**"+st.session_state.draw_model+"**: "+prompt)
+                flag,response = query(huggingface_client,{
+                    "inputs":prompt,
+                    "negative_prompt":st.session_state.negative_prompt,
+                })
+                image = response
+                st.session_state.draw_sesson.append({"role":"assistant","prompt":"**"+st.session_state.draw_model+"**: "+prompt,"image":image,"flag":flag})
                 if flag:
-                    st.image(image,prompt,use_column_width=True)
+                    st.image(image,use_column_width=True)
                 else:
-                    st.write(prompt,"\n",image)
+                    st.write(image)
     else:
         if st.session_state.auto_translate:
             lang,conf = langid.classify(prompt)
@@ -490,28 +489,32 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
                 flag,prompt = deeplx_translate(prompt,lang,"en",st.session_state.translate_api)
                 if not flag:
                     return False
-        flag,response = query({
-            "inputs":prompt,
-            "negative_prompt":st.session_state.negative_prompt,
-            "wait_for_model":st.session_state.wait_for_model,
-        })
-        image = response
         show_draw_page()
-        st.session_state.draw_sesson.append({"prompt":prompt,"image":image,"flag":flag})
         with show_draw.chat_message("assistant"):
+            st.write("**"+st.session_state.draw_model+"**: "+prompt)
+            flag,response = query(huggingface_client,{
+                "inputs":prompt,
+                "negative_prompt":st.session_state.negative_prompt,
+            })
+            image = response
+            st.session_state.draw_sesson.append({"role":"assistant","prompt":"**"+st.session_state.draw_model+"**: "+prompt,"image":image,"flag":flag})
             if flag:
-                st.image(image,prompt,use_column_width=True)
+                st.image(image,use_column_width=True)
             else:
-                st.write(prompt,"\n",image)
+                st.write(image)
 
 
 def show_draw_page():
     for section in st.session_state.draw_sesson:
-        with show_draw.chat_message("assistant"):
-            if section["flag"]:
-                st.image(section["image"],section["prompt"],use_column_width=True)
+        with show_draw.chat_message(section["role"]):
+            if section["role"] == "user":
+                st.write(section["prompt"])
             else:
-                st.write(section["prompt"],"\n",section["image"])
+                st.write(section["prompt"])
+                if section["flag"]:
+                    st.image(section["image"],use_column_width=True)
+                else:
+                    st.write(section["image"])
 
 
 @st.cache_data

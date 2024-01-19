@@ -9,3 +9,5 @@ openai
 google-generativeai
 pillow
 PyDeepLX
+huggingface
+huggingface_hub
