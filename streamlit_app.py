@@ -102,7 +102,7 @@ if "openai_model_list" not in st.session_state:
     st.session_state.StableDiffusion_URL = st.session_state.draw_model_list[st.session_state.draw_model]
     st.session_state.auto_translate = True
     st.session_state.chat_draw = True
-    st.session_state.wait_for_model = True
+    st.session_state.free_token = False
     st.session_state.draw_sesson = []
     st.session_state.draw_chat_system = """
 I want you to act as a prompt generator for Midjourney's artificial intelligence program. Your job is to based on conversations with users provide refined, detailed and creative descriptions that will inspire unique and interesting images from the AI. Keep in mind that the AI is capable of understanding a wide range of language and can interpret abstract concepts, so feel free to be as imaginative and descriptive as possible. For example, you could describe a scene from a futuristic city, or a surreal landscape filled with strange creatures. The more detailed and imaginative your description, the more interesting the resulting image will be. Remember to generate a description of image in one paragraph in English only without any other languages.
@@ -444,6 +444,11 @@ def show_translate_page():
             st.write(section['content'])
 
 
+def free_text2img(prompt,StableDiffusion_URL=st.session_state.StableDiffusion_URL):
+    client = InferenceClient(model=StableDiffusion_URL)
+    image = client.text_to_image(prompt)
+    
+
 def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL=st.session_state.StableDiffusion_URL):
     def query(client,payload):
         try:
@@ -451,6 +456,14 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
             return True, response
         except requests.exceptions.RequestException as e:
             return False,e
+    def query_free(prompt,model=StableDiffusion_URL):
+        try:
+            client = InferenceClient(model=StableDiffusion_URL)
+            image = client.text_to_image(prompt)
+            return True,image
+        except requests.exceptions.RequestException as e:
+            return False,e
+
         
     huggingface_client = InferenceClient(token=token)
     st.session_state.draw_sesson.append({"role":"user","prompt":prompt})
@@ -472,10 +485,13 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
             show_draw_page()
             with show_draw.chat_message("assistant"):
                 st.write("**"+st.session_state.draw_model+"**: "+prompt)
-                flag,response = query(huggingface_client,{
-                    "inputs":prompt,
-                    "negative_prompt":st.session_state.negative_prompt,
-                })
+                if not st.session_state.free_token:
+                    flag,response = query(huggingface_client,{
+                        "inputs":prompt,
+                        "negative_prompt":st.session_state.negative_prompt,
+                    })
+                else:
+                    flag,response = query_free(prompt)
                 image = response
                 st.session_state.draw_sesson.append({"role":"assistant","prompt":"**"+st.session_state.draw_model+"**: "+prompt,"image":image,"flag":flag})
                 if flag:
@@ -492,10 +508,13 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
         show_draw_page()
         with show_draw.chat_message("assistant"):
             st.write("**"+st.session_state.draw_model+"**: "+prompt)
-            flag,response = query(huggingface_client,{
-                "inputs":prompt,
-                "negative_prompt":st.session_state.negative_prompt,
-            })
+            if not st.session_state.free_token:
+                flag,response = query(huggingface_client,{
+                    "inputs":prompt,
+                    "negative_prompt":st.session_state.negative_prompt,
+                })
+            else:
+                flag,response = query_free(prompt)
             image = response
             st.session_state.draw_sesson.append({"role":"assistant","prompt":"**"+st.session_state.draw_model+"**: "+prompt,"image":image,"flag":flag})
             if flag:
@@ -614,7 +633,7 @@ def change_paramater():
     st.session_state.translate_speech = st.session_state.translate_speech
     st.session_state.auto_translate = st.session_state.auto_translate
     st.session_state.chat_draw = st.session_state.chat_draw
-    st.session_state.wait_for_model = st.session_state.wait_for_model
+    st.session_state.free_token = st.session_state.free_token
     st.session_state.prompts_gpt = st.session_state.prompts_gpt
 
 def get_save():
@@ -713,7 +732,7 @@ with st.sidebar:
             # with col2:
             st.session_state.auto_translate = st.toggle('Translate', st.session_state.auto_translate,on_change=change_paramater)
             # with col3:
-            st.session_state.wait_for_model = st.toggle('Wait', st.session_state.wait_for_model,on_change=change_paramater)
+            st.session_state.free_token = st.toggle('Free Token', st.session_state.free_token,on_change=change_paramater)
 
     # 保存
     st.button("Save",use_container_width=True,key="Save")
