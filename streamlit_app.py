@@ -16,6 +16,7 @@ import hashlib
 import base64
 import langid
 import PyPDF2
+import time
 import io
 
 if "openai_model_list" not in st.session_state:
@@ -100,9 +101,10 @@ if "openai_model_list" not in st.session_state:
     }
     st.session_state.negative_prompt = "extra fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed, ugly, bad anatomy, bad proportions, extra limbs, cloned face, double torso, extra arms, extra hands, mangled fingers, missing lips, ugly face, distorted face, extra legs"
     st.session_state.StableDiffusion_URL = st.session_state.draw_model_list[st.session_state.draw_model]
-    st.session_state.auto_translate = True
+    st.session_state.auto_translate = False
     st.session_state.chat_draw = True
-    st.session_state.free_token = False
+    st.session_state.image_choice = True
+    st.session_state.image_choice_name = "Huggingface"
     st.session_state.draw_sesson = []
     st.session_state.draw_chat_system = """
 I want you to act as a prompt generator for Midjourney's artificial intelligence program. Your job is to based on conversations with users provide refined, detailed and creative descriptions that will inspire unique and interesting images from the AI. Keep in mind that the AI is capable of understanding a wide range of language and can interpret abstract concepts, so feel free to be as imaginative and descriptive as possible. For example, you could describe a scene from a futuristic city, or a surreal landscape filled with strange creatures. The more detailed and imaginative your description, the more interesting the resulting image will be. Remember to generate a description of image in one paragraph in English only without any other languages.
@@ -456,13 +458,42 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
             return True, response
         except requests.exceptions.RequestException as e:
             return False,e
-    def query_free(prompt,model=StableDiffusion_URL):
-        try:
-            client = InferenceClient(model=StableDiffusion_URL)
-            image = client.text_to_image(prompt)
-            return True,image
-        except requests.exceptions.RequestException as e:
-            return False,e
+
+    def query_vispunk(prompt):
+        def request_generate(prompt):
+            url = "https://motion-api.vispunk.com/v1/generate/generate_image"
+            headers = {"Content-Type": "application/json"}
+            data = {"prompt": prompt}
+            try: 
+                response = requests.post(url, headers=headers, json=data)
+                return True,response.json()["task_id"]
+            except Exception as e:
+                st.error(f"Error: {e}")
+                return False,None
+
+
+        def request_image(task_id):
+            url = "https://motion-api.vispunk.com/v1/generate/check_image_task"
+            headers = {"Content-Type": "application/json"}
+            data = {"task_id": task_id}
+            try: 
+                response = requests.post(url, headers=headers, json=data)
+                return True,response.json()["images"][0]
+            except Exception as e:
+                return False,e
+            
+        flag_generate,task_id = request_generate(prompt)
+        if flag_generate:
+            while True:
+                flag_wait,image_src = request_image(task_id)
+                if not flag_wait:
+                    time.sleep(1)
+                else:
+                    image_data = base64.b64decode(image_src)
+                    image = io.BytesIO(image_data)
+                    return True,image
+        else:
+            return False,task_id
 
         
     huggingface_client = InferenceClient(token=token)
@@ -484,16 +515,19 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
                         return False
             show_draw_page()
             with show_draw.chat_message("assistant"):
-                st.write("**"+st.session_state.draw_model+"**: "+prompt)
-                if not st.session_state.free_token:
+                if st.session_state.image_choice:
+                    ai_prompt = "**"+st.session_state.draw_model+"**: "+prompt
+                    st.write(ai_prompt)
                     flag,response = query(huggingface_client,{
                         "inputs":prompt,
                         "negative_prompt":st.session_state.negative_prompt,
                     })
                 else:
-                    flag,response = query_free(prompt)
+                    ai_prompt = "**Vispunk**: "+prompt
+                    st.write(ai_prompt)
+                    flag,response = query_vispunk(prompt)
                 image = response
-                st.session_state.draw_sesson.append({"role":"assistant","prompt":"**"+st.session_state.draw_model+"**: "+prompt,"image":image,"flag":flag})
+                st.session_state.draw_sesson.append({"role":"assistant","prompt":ai_prompt,"image":image,"flag":flag})
                 if flag:
                     st.image(image,use_column_width=True)
                 else:
@@ -507,16 +541,19 @@ def text2img(prompt,token=st.session_state.huggingface_token,StableDiffusion_URL
                     return False
         show_draw_page()
         with show_draw.chat_message("assistant"):
-            st.write("**"+st.session_state.draw_model+"**: "+prompt)
-            if not st.session_state.free_token:
+            if st.session_state.image_choice:
+                ai_prompt = "**"+st.session_state.draw_model+"**: "+prompt
+                st.write(ai_prompt)
                 flag,response = query(huggingface_client,{
                     "inputs":prompt,
                     "negative_prompt":st.session_state.negative_prompt,
                 })
             else:
-                flag,response = query_free(prompt)
+                ai_prompt = "**Vispunk**: "+prompt
+                st.write(ai_prompt)
+                flag,response = query_vispunk(prompt)
             image = response
-            st.session_state.draw_sesson.append({"role":"assistant","prompt":"**"+st.session_state.draw_model+"**: "+prompt,"image":image,"flag":flag})
+            st.session_state.draw_sesson.append({"role":"assistant","prompt":ai_prompt,"image":image,"flag":flag})
             if flag:
                 st.image(image,use_column_width=True)
             else:
@@ -592,6 +629,14 @@ def gpt_choice():
         st.session_state.gpt_choice_name = "ChatGPT"
 
 
+def image_choice():
+    st.session_state.image_choice = not st.session_state.image_choice
+    if st.session_state.image_choice:
+        st.session_state.image_choice_name = "Huggingface"
+    else:
+        st.session_state.image_choice_name = "Vispunk"
+
+
 def upload_google_attachment():
     st.session_state.google_attachment = st.session_state.google_attachment
     if st.session_state.google_attachment is not None:
@@ -633,7 +678,7 @@ def change_paramater():
     st.session_state.translate_speech = st.session_state.translate_speech
     st.session_state.auto_translate = st.session_state.auto_translate
     st.session_state.chat_draw = st.session_state.chat_draw
-    st.session_state.free_token = st.session_state.free_token
+    st.session_state.image_choice = st.session_state.image_choice
     st.session_state.prompts_gpt = st.session_state.prompts_gpt
 
 def get_save():
@@ -723,17 +768,16 @@ with st.sidebar:
     # 绘画设置
     with st.container():
         with st.expander("**Draw Settings**"):
-            st.session_state.draw_model = st.selectbox('Draw Models', sorted(st.session_state.draw_model_list.keys(),key=lambda x:x.split("-")[0]),on_change=change_paramater)
-            st.session_state.huggingface_token = st.text_input('Huggingface Token',type='password',value=st.session_state.huggingface_token,on_change=change_paramater)
-            st.session_state.negative_prompt = st.text_input('Negative Prompt',value=st.session_state.negative_prompt,on_change=change_paramater)
-            # col1,col2,col3 = st.columns(3)
-            # with col1:
+            st.session_state.image_choice = st.toggle(st.session_state.image_choice_name, st.session_state.image_choice,on_change=image_choice)
+            if st.session_state.image_choice:
+                st.session_state.draw_model = st.selectbox('Draw Models', sorted(st.session_state.draw_model_list.keys(),key=lambda x:x.split("-")[0]),on_change=change_paramater)
+                st.session_state.huggingface_token = st.text_input('Huggingface Token',type='password',value=st.session_state.huggingface_token,on_change=change_paramater)
+                st.session_state.negative_prompt = st.text_input('Negative Prompt',value=st.session_state.negative_prompt,on_change=change_paramater)
+            else:
+                pass
             st.session_state.chat_draw = st.toggle('Chat', st.session_state.chat_draw,on_change=change_paramater)
-            # with col2:
             st.session_state.auto_translate = st.toggle('Translate', st.session_state.auto_translate,on_change=change_paramater)
-            # with col3:
-            st.session_state.free_token = st.toggle('Free Token', st.session_state.free_token,on_change=change_paramater)
-
+            
     # 保存
     st.button("Save",use_container_width=True,key="Save")
     if st.session_state.get("Save"):
@@ -788,7 +832,10 @@ elif st.session_state.mode == "**🔤Deeplx**":
         translate(txt_prompt,st.session_state.target_lang[-2:])
 
 elif st.session_state.mode == "**🎨Txt2Img**":
-    header.write("<h2> 🎨 "+st.session_state.draw_model+"</h2>",unsafe_allow_html=True)
+    if st.session_state.image_choice:
+        header.write("<h2> 🎨 "+st.session_state.draw_model+"</h2>",unsafe_allow_html=True)
+    else:
+        header.write("<h2> 🎨 "+st.session_state.image_choice_name+"</h2>",unsafe_allow_html=True)
     draw_prompt = st.chat_input("Send your prompt")
     if draw_prompt:
         text2img(draw_prompt)
